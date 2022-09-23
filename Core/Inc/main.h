@@ -75,6 +75,7 @@ void Error_Handler(void);
 #define BTN_MENU_INP_Pin GPIO_PIN_15
 #define BTN_MENU_INP_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
+#define BTN_HOLD_DELAY				1000
 #define BTN_DEBOUNCER_MS			50
 #define LED_BLINK_TICK_MS_TIMES_10 	25
 #define MAX_VOLTAGE_TO_SHOW			3

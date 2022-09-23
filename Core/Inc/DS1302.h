@@ -61,8 +61,8 @@ void DS1302_SetTime_Struct(Time_Struct *timeStruct);
 Time_Struct DS1302_ReadTime_Struct();
 void DS1302_SetTime_Struct_Burst(Time_Struct *timeStruct);
 Time_Struct DS1302_ReadTime_Struct_Burst();
-void DS1302_RamSave(uint8_t data);
-uint8_t DS1302_RamRead(void);
+void DS1302_RamSave(int addr, uint8_t data);
+uint8_t DS1302_RamRead(int addr);
 
 #endif //___ds1302_H
 

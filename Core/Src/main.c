@@ -41,6 +41,7 @@ typedef enum MainStates_e{
 #ifdef DAC_SEC
 	SEC_SETTINGS_STATE,
 #endif
+	TWERK_SETTINGS_STATE,
 	FIN_SETTINGS_STATE
 }MainStates_e;
 
@@ -64,6 +65,7 @@ typedef struct time_data_t{
 	uint8_t hours;
 	uint8_t mins;
 	uint8_t sec;
+	uint8_t twerking;
 }time_data_t;
 /* USER CODE END PD */
 
@@ -160,14 +162,38 @@ void MainTask(void *argument);
 //dec cntrl
 
 float time_hours_to_voltage(time_data_t *time){
+
+	static float r = 0.0f;
+
+
+	if (time->twerking){
+		r += 0.01;
+		if (r > 0.08f)
+			r = -0.08f;
+	}else{
+		r = 0.0f;
+	}
+
 	int data_fitter = 0;
 	if (time->hours > 12)
 		data_fitter = 12;
-	return (float)(g_h_delta * (float)(time->hours - data_fitter))*VOLTAGE_CORR_COEFF;
+	return (float)(r + (float)(g_h_delta * (float)(time->hours - data_fitter)) * VOLTAGE_CORR_COEFF);
 }
 
 float time_mins_to_voltage(time_data_t *time){
-	return (float)(g_m_delta * (float)(time->mins));
+
+	static float r = 0.0f;
+
+	if (time->twerking){
+		r += 0.01;
+		if (r > 0.08f)
+			r = -0.08f;
+	}
+	else{
+		r = 0.0f;
+	}
+
+	return (float)(r + (float)(g_m_delta * (float)(time->mins)));
 }
 
 #ifdef DAC_SEC
@@ -225,6 +251,7 @@ void time_init(time_data_t *time){
 	time->hours = 0;
 	time->mins = 0;
 	time->sec = 0;
+	time->twerking = 0;
 }
 
 //led controls
@@ -319,7 +346,6 @@ int main(void)
   g_s_delta = (float)MAX_VOLTAGE_TO_SHOW/(float)60.0f;
 #endif
   HAL_IWDG_Refresh(&hiwdg);
-
 
 
   /* USER CODE END 2 */
@@ -575,7 +601,7 @@ void StartDefaultTask(void *argument)
   {
 	//wdg refresh
 	HAL_IWDG_Refresh(&hiwdg);
-    osDelay(10);
+    osDelay(5);
   }
   /* USER CODE END 5 */
 }
@@ -600,18 +626,31 @@ void ClockTask(void *argument)
 	DS1302_Init();
 
 	//check saved leds status
-	uint8_t led_data = 0;
-	led_data = DS1302_RamRead();
-	if (led_data == 1){
+	uint8_t ram_data = 0;
+	ram_data = DS1302_RamRead(0);
+
+	if ((ram_data & 0x01) == 1){
 		leds.led_hour.status = 1;
 		leds.led_min.status = 1;
 		leds.led_sec.status = 1;
 	}
-	else{
+	else if ((ram_data & 0x01) == 0){
 		leds.led_hour.status = 0;
 		leds.led_min.status = 0;
 		leds.led_sec.status = 0;
 	}
+
+	//init local time data
+	time_init(&l_time_data);
+
+	if ((ram_data >> 1) == 1){
+		l_time_data.twerking = 1;
+	}
+	else if ((ram_data >> 1) == 0){
+		l_time_data.twerking = 0;
+	}
+
+
 	status = osMutexAcquire(LedsSemHandle, 0);
 	if (status == osOK){
 		set_leds_data(&leds);
@@ -628,8 +667,13 @@ void ClockTask(void *argument)
 		DS1302_SetTime_Struct(&time);
 	}
 
-	//init local time data
-	time_init(&l_time_data);
+
+
+	status = osMutexAcquire(ClockDataMutexHandle, 0);
+	if (status == osOK){
+		time_set_readed(&l_time_data);
+		osMutexRelease(ClockDataMutexHandle);
+	}
 	uint32_t timeout = osKernelGetTickCount();
   /* Infinite loop */
   for(;;)
@@ -645,17 +689,30 @@ void ClockTask(void *argument)
 			time_set_readed(&l_time_data);
 			time.hour = l_time_data.hours;
 			time.min = l_time_data.mins;
+
+			status = osMutexAcquire(LedsSemHandle, 0);
+			if (status == osOK){
+				get_leds_data(&leds);
+				DS1302_RamSave(0, ((leds.led_hour.status) | (l_time_data.twerking << 1)));
+				osMutexRelease(LedsSemHandle);
+			}
+
 			DS1302_SetTime_Struct(&time);
 			time_switch_to_global();
 			osMutexRelease(ClockDataMutexHandle);
 		}
 	}
 	else if (flag == 0x02){
+		status = osMutexAcquire(ClockDataMutexHandle, 0);
+		if (status == osOK){
+			time_get_data(&l_time_data);
+			osMutexRelease(ClockDataMutexHandle);
+		}
 		osEventFlagsClear(SaveEventHandle, flag);
 		status = osMutexAcquire(LedsSemHandle, 0);
 		if (status == osOK){
 			get_leds_data(&leds);
-			DS1302_RamSave(leds.led_hour.status);
+			DS1302_RamSave(0, ((leds.led_hour.status) | (l_time_data.twerking << 1)));
 			osMutexRelease(LedsSemHandle);
 		}
 	}
@@ -808,7 +865,7 @@ void LedTask(void *argument)
 
 	led_status_t leds;
 	osStatus_t status;
-	uint32_t min_timeout = 0, hour_timeout = 0, sec_timeout = 0;
+	uint32_t blink_timeout = 0, blink_event = 0, toggle_status = 0;
 
 	uint32_t timeout = osKernelGetTickCount();
   /* Infinite loop */
@@ -822,17 +879,33 @@ void LedTask(void *argument)
 		osSemaphoreRelease(LedsSemHandle);
 	}
 
+	if (blink_timeout > LED_BLINK_TICK_MS_TIMES_10){
+		if (toggle_status){
+			toggle_status = 0;
+		}else
+		{
+			toggle_status = 1;
+		}
+		blink_event = 1;
+		blink_timeout = 0;
+	}
+	else{
+		blink_event = 0;
+		blink_timeout++;
+	}
+
+
 	if (leds.led_hour.status == 1){
 		if (leds.led_hour.blinking == 1){
-			if (hour_timeout > LED_BLINK_TICK_MS_TIMES_10){
-				HAL_GPIO_TogglePin(LED_HOUR_GPIO_Port, LED_HOUR_Pin);
-				hour_timeout = 0;
-			}
-			else{
-				hour_timeout++;
+			if (blink_event){
+				if (toggle_status){
+					HAL_GPIO_WritePin(LED_HOUR_GPIO_Port, LED_HOUR_Pin, GPIO_PIN_SET);
+				}
+				else{
+					HAL_GPIO_WritePin(LED_HOUR_GPIO_Port, LED_HOUR_Pin, GPIO_PIN_RESET);
+				}
 			}
 		}else{
-			hour_timeout = 0;
 			HAL_GPIO_WritePin(LED_HOUR_GPIO_Port, LED_HOUR_Pin, GPIO_PIN_SET);
 		}
 	}else{
@@ -842,14 +915,15 @@ void LedTask(void *argument)
 
 	if (leds.led_min.status == 1){
 		if (leds.led_min.blinking == 1){
-			if (min_timeout > LED_BLINK_TICK_MS_TIMES_10){
-				HAL_GPIO_TogglePin(LED_MIN_GPIO_Port, LED_MIN_Pin);
-				min_timeout = 0;
-			}else{
-				min_timeout++;
+			if (blink_event){
+				if (toggle_status){
+					HAL_GPIO_WritePin(LED_MIN_GPIO_Port, LED_MIN_Pin, GPIO_PIN_SET);
+				}
+				else{
+					HAL_GPIO_WritePin(LED_MIN_GPIO_Port, LED_MIN_Pin, GPIO_PIN_RESET);
+				}
 			}
 		}else{
-			min_timeout = 0;
 			HAL_GPIO_WritePin(LED_MIN_GPIO_Port, LED_MIN_Pin, GPIO_PIN_SET);
 		}
 	}else{
@@ -922,6 +996,9 @@ void MainTask(void *argument)
 
 			if (l_btn_state.btn_menu){
 				pre_settings_leds.led_hour.status = 1;
+				pre_settings_leds.led_hour.blinking = 1;
+				pre_settings_leds.led_min.status = 1;
+				pre_settings_leds.led_min.blinking = 0;
 				status = osSemaphoreAcquire(LedsSemHandle, 0);
 				if (status == osOK){
 					set_leds_data(&pre_settings_leds);
@@ -966,8 +1043,11 @@ void MainTask(void *argument)
 				}
 			}
 			else if (l_btn_state.btn_menu){
-				pre_settings_leds.led_hour.status = 0;
+				pre_settings_leds.led_hour.status = 1;
+				pre_settings_leds.led_hour.blinking = 0;
 				pre_settings_leds.led_min.status = 1;
+				pre_settings_leds.led_min.blinking = 1;
+
 				status = osSemaphoreAcquire(LedsSemHandle, 0);
 				if (status == osOK){
 					set_leds_data(&pre_settings_leds);
@@ -992,8 +1072,15 @@ void MainTask(void *argument)
 				}
 			}
 			else if (l_btn_state.btn_menu){
-				pre_settings_leds.led_min.status = 0;
+
+				//reset prev states of leds and lets toggle from ON status
+				pre_settings_leds.led_min.status = 1;
+				pre_settings_leds.led_hour.status = 1;
+				pre_settings_leds.led_min.blinking = 1;
+				pre_settings_leds.led_hour.blinking = 1;
 #ifdef DAC_SEC
+				pre_settings_leds.led_min.status = 0;
+				pre_settings_leds.led_hour.status = 0;
 				pre_settings_leds.led_sec.status = 1;
 				state = SEC_SETTINGS_STATE;
 #else
@@ -1002,7 +1089,7 @@ void MainTask(void *argument)
 					set_leds_data(&pre_settings_leds);
 					osSemaphoreRelease(LedsSemHandle);
 				}
-				state = FIN_SETTINGS_STATE;
+				state = TWERK_SETTINGS_STATE;
 #endif
 			}
 		}
@@ -1023,18 +1110,60 @@ void MainTask(void *argument)
 				}
 			}
 			else if (l_btn_state.btn_menu){
+				pre_settings_leds.led_min.status = 1;
+				pre_settings_leds.led_hour.status = 1;
+				pre_settings_leds.led_sec.status = 1;
+				pre_settings_leds.led_min.blinking = 1;
+				pre_settings_leds.led_hour.blinking = 1;
+				pre_settings_leds.led_sec.blinking = 1;
+				status = osSemaphoreAcquire(LedsSemHandle, 0);
+				if (status == osOK){
+					set_leds_data(&pre_settings_leds);
+					osSemaphoreRelease(LedsSemHandle);
+				}
+				state = TWERK_SETTINGS_STATE;
+			}
+		}
+		break;
+	}
+#endif
+	case TWERK_SETTINGS_STATE:
+	{
+		osStatus_t status;
+		status = osMessageQueueGet(BtnQueue, &l_btn_state, 0, 300);
+		if (status == osOK){
+			if (l_btn_state.btn_led_set){
+				if (l_time_data.twerking){
+					l_time_data.twerking = 0;
+				}
+				else{
+					l_time_data.twerking = 1;
+				}
+				status = osMutexAcquire(ClockDataMutexHandle, 0);
+				if (status == osOK){
+					time_set_local(&l_time_data);
+					osMutexRelease(ClockDataMutexHandle);
+				}
+			}
+			else if (l_btn_state.btn_menu){
+				pre_settings_leds.led_min.status = 0;
+				pre_settings_leds.led_hour.status = 0;
 				pre_settings_leds.led_sec.status = 0;
 				status = osSemaphoreAcquire(LedsSemHandle, 0);
 				if (status == osOK){
 					set_leds_data(&pre_settings_leds);
 					osSemaphoreRelease(LedsSemHandle);
 				}
+				status = osMutexAcquire(ClockDataMutexHandle, 0);
+				if (status == osOK){
+					time_set_local(&l_time_data);
+					osMutexRelease(ClockDataMutexHandle);
+				}
 				state = FIN_SETTINGS_STATE;
 			}
 		}
 		break;
 	}
-#endif
 	case FIN_SETTINGS_STATE:
 	{
 		//End of settings. The illumination state is restored. The save settings event is set.

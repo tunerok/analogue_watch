@@ -224,13 +224,14 @@ Time_Struct convert_time_struct(Time_Struct *timeStruct) {
     return *timeStruct;
 }
 
-void DS1302_RamSave(uint8_t data){
+void DS1302_RamSave(int addr, uint8_t data){
 	ds1302_single_write(DS1302_CONTROL_ADD, 0x00);
-	ds1302_single_write(DS1302_RAM_0, data);
+	ds1302_single_write(DS1302_RAM_0 + (uint8_t)addr, data);
+	ds1302_single_write(DS1302_CONTROL_ADD, 0x80);
 }
 
-uint8_t DS1302_RamRead(void){
-	return ds1302_single_read(DS1302_RAM_0);
+uint8_t DS1302_RamRead(int addr){
+	return ds1302_single_read(DS1302_RAM_0 + (uint8_t)addr);
 }
 
 void DS1302_SetTime_Struct(Time_Struct *timeStruct) {
