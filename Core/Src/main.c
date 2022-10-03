@@ -891,11 +891,9 @@ void LedTask(void *argument)
 	osStatus_t status;
 	uint32_t blink_timeout = 0, blink_event = 0, toggle_status = 0;
 
-	uint32_t timeout = osKernelGetTickCount();
   /* Infinite loop */
   for(;;)
   {
-	timeout += 10;
 
 	status = osSemaphoreAcquire(LedsSemHandle, 300);
 	if (status == osOK){
@@ -969,7 +967,7 @@ void LedTask(void *argument)
 		HAL_GPIO_WritePin(LED_SEC_GPIO_Port, LED_SEC_Pin, GPIO_PIN_RESET);
 	}
 #endif
-    osDelayUntil(timeout);
+    osDelay(10);
   }
   /* USER CODE END LedTask */
 }
