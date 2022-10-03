@@ -26,6 +26,7 @@
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+typedef StaticTask_t osStaticThreadDef_t;
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
@@ -88,37 +89,62 @@ const osThreadAttr_t defaultTask_attributes = {
 };
 /* Definitions for ClockDealer */
 osThreadId_t ClockDealerHandle;
+uint32_t ClockDealerBuffer[ 128 ];
+osStaticThreadDef_t ClockDealerControlBlock;
 const osThreadAttr_t ClockDealer_attributes = {
   .name = "ClockDealer",
-  .stack_size = 128 * 4,
+  .cb_mem = &ClockDealerControlBlock,
+  .cb_size = sizeof(ClockDealerControlBlock),
+  .stack_mem = &ClockDealerBuffer[0],
+  .stack_size = sizeof(ClockDealerBuffer),
   .priority = (osPriority_t) osPriorityLow1,
 };
 /* Definitions for DacDealer */
 osThreadId_t DacDealerHandle;
+uint32_t DacDealerBuffer[ 128 ];
+osStaticThreadDef_t DacDealerControlBlock;
 const osThreadAttr_t DacDealer_attributes = {
   .name = "DacDealer",
-  .stack_size = 128 * 4,
+  .cb_mem = &DacDealerControlBlock,
+  .cb_size = sizeof(DacDealerControlBlock),
+  .stack_mem = &DacDealerBuffer[0],
+  .stack_size = sizeof(DacDealerBuffer),
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for BtnHandler */
 osThreadId_t BtnHandlerHandle;
+uint32_t BtnHandlerBuffer[ 128 ];
+osStaticThreadDef_t BtnHandlerControlBlock;
 const osThreadAttr_t BtnHandler_attributes = {
   .name = "BtnHandler",
-  .stack_size = 128 * 4,
+  .cb_mem = &BtnHandlerControlBlock,
+  .cb_size = sizeof(BtnHandlerControlBlock),
+  .stack_mem = &BtnHandlerBuffer[0],
+  .stack_size = sizeof(BtnHandlerBuffer),
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for LedDealer */
 osThreadId_t LedDealerHandle;
+uint32_t LedDealerBuffer[ 128 ];
+osStaticThreadDef_t LedDealerControlBlock;
 const osThreadAttr_t LedDealer_attributes = {
   .name = "LedDealer",
-  .stack_size = 128 * 4,
+  .cb_mem = &LedDealerControlBlock,
+  .cb_size = sizeof(LedDealerControlBlock),
+  .stack_mem = &LedDealerBuffer[0],
+  .stack_size = sizeof(LedDealerBuffer),
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for MainTaskName */
 osThreadId_t MainTaskNameHandle;
+uint32_t MainTaskNameBuffer[ 128 ];
+osStaticThreadDef_t MainTaskNameControlBlock;
 const osThreadAttr_t MainTaskName_attributes = {
   .name = "MainTaskName",
-  .stack_size = 128 * 4,
+  .cb_mem = &MainTaskNameControlBlock,
+  .cb_size = sizeof(MainTaskNameControlBlock),
+  .stack_mem = &MainTaskNameBuffer[0],
+  .stack_size = sizeof(MainTaskNameBuffer),
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for ClockDataMutex */
@@ -674,11 +700,9 @@ void ClockTask(void *argument)
 		time_set_readed(&l_time_data);
 		osMutexRelease(ClockDataMutexHandle);
 	}
-	uint32_t timeout = osKernelGetTickCount();
   /* Infinite loop */
   for(;;)
   {
-	  timeout += 500;
 	//save time to ds1302 if save event happened
 	flag = osEventFlagsGet(SaveEventHandle);
 	if (flag == 0x01){
@@ -726,7 +750,7 @@ void ClockTask(void *argument)
 		time_set_readed(&l_time_data);
 		osMutexRelease(ClockDataMutexHandle);
 	}
-	osDelayUntil(timeout);
+	osDelay(500);
   }
   /* USER CODE END ClockTask */
 }
