@@ -29,3 +29,6 @@ Step-файлы лежат в /Step. В папке /Cad лежат файлы д
 
 ![Front plane](/Img/2.jpg)
 
+Подключение переферии
+
+![Front plane](/Img/ioc.jpg)
