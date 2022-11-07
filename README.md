@@ -32,3 +32,8 @@ Step-файлы лежат в /Step. В папке /Cad лежат файлы д
 Подключение переферии
 
 ![wiring](/Img/ioc.JPG)
+
+
+![wiring2](/Img/bb.png)
+
+![wiring3](/Img/poor_scheme.png)
